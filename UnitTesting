@@ -1,0 +1,36 @@
+import unittest
+import json
+import base64
+import zlib
+from Testing_compatible_code import process_vehicle_data
+
+class TestProcessVehicleData(unittest.TestCase):
+
+    def setUp(self):
+        self.vehicle_data = [
+            {
+                'vehicle_id': 'vehicle_1',
+                'payload': base64.b64encode(zlib.compress(json.dumps({
+                    'tracking': [
+                        {'timestamp': '2020-02-19T15:57:01.000,+00:00', 'ignition': 1, 'speed': 20},
+                        {'timestamp': '2020-02-19T15:57:02.000,+00:00', 'ignition': 1, 'speed': 20},
+                        {'timestamp': '2020-02-19T15:57:03.000,+00:00', 'ignition': 0, 'speed': 0}
+                    ]
+                }).encode('utf-8'))).decode('utf-8')
+            }
+        ]
+
+    def test_process_vehicle_data(self):
+        result = process_vehicle_data(self.vehicle_data)
+        
+        self.assertEqual(result['total_vehicles'], 1)
+        self.assertEqual(result['fastest_vehicle'], 'vehicle_1')
+        self.assertEqual(result['longest_parked_vehicle'], 'vehicle_1')
+        self.assertEqual(result['longest_idling_vehicle'], 'vehicle_1')
+        self.assertEqual(result['longest_moving_vehicle'], 'vehicle_1')
+        self.assertEqual(result['longest_parked_duration'], 1)
+        self.assertEqual(result['longest_moving_duration'], 2)
+        self.assertEqual(result['longest_idling_duration'], 0)
+
+if __name__ == '__main__':
+    unittest.main()

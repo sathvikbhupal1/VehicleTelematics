@@ -1,0 +1,20 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Vehicle Data Processing Lambda
+
+Resources:
+  VehicleDataProcessingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: Testing_compatible_code.lambda_handler
+      Runtime: python3.8
+      CodeUri: ./
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref VehicleDataBucket
+            Events: s3:ObjectCreated:*
+
+  VehicleDataBucket:
+    Type: AWS::S3::Bucket
