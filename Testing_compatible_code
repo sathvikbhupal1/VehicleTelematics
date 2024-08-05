@@ -1,0 +1,99 @@
+import json
+import base64
+import zlib
+import boto3
+import logging
+from collections import defaultdict
+
+s3 = boto3.client('s3')
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def process_vehicle_data(vehicle_data):
+    unique_vehicles = set()
+    avg_speeds = defaultdict(float)
+    parked_counts = defaultdict(int)
+    idling_counts = defaultdict(int)
+    moving_counts = defaultdict(int)
+    speed_counts = defaultdict(int)
+    
+    for record in vehicle_data:
+        vehicle_id = record['vehicle_id']
+        unique_vehicles.add(vehicle_id)
+        payload = record['payload']
+        
+        compressed_data = base64.b64decode(payload)
+        uncompressed_data = zlib.decompress(compressed_data).decode('utf-8')
+        
+        tracking_data = json.loads(uncompressed_data)['tracking']
+
+        for entry in tracking_data:
+            speed = entry['speed']
+            ignition = entry['ignition']
+
+            avg_speeds[vehicle_id] += speed
+            speed_counts[vehicle_id] += 1
+
+            if ignition == 0 and speed == 0:
+                parked_counts[vehicle_id] += 1
+            elif ignition == 1 and speed == 0:
+                idling_counts[vehicle_id] += 1
+            elif ignition == 1 and speed > 0:
+                moving_counts[vehicle_id] += 1
+
+    # Calculate average speeds
+    for vehicle_id in avg_speeds:
+        if speed_counts[vehicle_id] > 0:
+            avg_speeds[vehicle_id] /= speed_counts[vehicle_id]
+
+    total_vehicles = len(unique_vehicles)
+    fastest_vehicle = max(avg_speeds, key=avg_speeds.get, default=None)
+    longest_parked_vehicle = max(parked_counts, key=parked_counts.get, default=None)
+    longest_idling_vehicle = max(idling_counts, key=idling_counts.get, default=None)
+    longest_moving_vehicle = max(moving_counts, key=moving_counts.get, default=None)
+
+    results = {
+        "total_vehicles": total_vehicles,
+        "fastest_vehicle": fastest_vehicle,
+        "longest_parked_vehicle": longest_parked_vehicle,
+        "longest_idling_vehicle": longest_idling_vehicle,
+        "longest_moving_vehicle": longest_moving_vehicle,
+        "longest_parked_duration": parked_counts.get(longest_parked_vehicle, 0),
+        "longest_moving_duration": moving_counts.get(longest_moving_vehicle, 0),
+        "longest_idling_duration": idling_counts.get(longest_idling_vehicle, 0)
+    }
+
+    return results
+
+def lambda_handler(event, context):
+    try:
+        logger.info("Event received")
+        for record in event['Records']:
+            bucket = record['s3']['bucket']['name']
+            key = record['s3']['object']['key']
+            
+            logger.info(f"Processing file from Bucket: {bucket}, Key: {key}")
+            
+            s3_object = s3.get_object(Bucket=bucket, Key=key)
+            data = s3_object['Body'].read().decode('utf-8')
+            
+            logger.info(f"Downloaded file of size: {len(data)} bytes")
+            
+            parsed_data = json.loads(data)
+            vehicle_data = parsed_data['records']
+            
+            results = process_vehicle_data(vehicle_data)
+            
+            logger.info(f"Results: {results}")
+            
+            return {
+                "statusCode": 200,
+                "body": json.dumps(results)
+            }
+            
+    except Exception as e:
+        logger.error(f"Error processing the data: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)})
+        }
